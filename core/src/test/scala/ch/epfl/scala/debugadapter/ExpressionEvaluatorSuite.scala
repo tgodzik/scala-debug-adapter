@@ -773,25 +773,40 @@ abstract class ExpressionEvaluatorSuite(scalaVersion: ScalaVersion)
         )
       )
     }
+
+    "should evaluate java expression with primitives" - {
+      val source =
+        """public class EvaluateTest {
+          |  static void main(String[] args){
+          |    System.out.println("Hello, World!");
+          |  }
+          |}
+          |""".stripMargin
+      assertEvaluationInMainClass(source, "EvaluateTest", 3, "1 + 2", "java")(
+        _.exists(_.toInt == 3)
+      )
+    }
   }
 
   case class ExpressionEvaluation(
       line: Int,
       expression: String,
       assertion: Either[Message, String] => Boolean,
-      stoppageNo: Int = 0
+      stoppageNo: Int = 0,
+      extension: String = "scala"
   )
 
   private def assertEvaluationInMainClass(
       source: String,
       mainClass: String,
       line: Int,
-      expression: String
+      expression: String,
+      extension: String = "scala"
   )(assertion: Either[Message, String] => Boolean): Unit = {
     assertEvaluationsInMainClass(
       source,
       mainClass,
-      ExpressionEvaluation(line, expression, assertion)
+      ExpressionEvaluation(line, expression, assertion, extension = extension)
     )
   }
 
@@ -801,7 +816,12 @@ abstract class ExpressionEvaluatorSuite(scalaVersion: ScalaVersion)
       evaluationSteps: ExpressionEvaluation*
   ): Unit = {
     val runner =
-      MainDebuggeeRunner.mainClassRunner(source, mainClass, scalaVersion)
+      MainDebuggeeRunner.mainClassRunner(
+        source,
+        mainClass,
+        scalaVersion,
+        evaluationSteps.head.extension
+      )
     assertEvaluations(runner, evaluationSteps)
   }
 

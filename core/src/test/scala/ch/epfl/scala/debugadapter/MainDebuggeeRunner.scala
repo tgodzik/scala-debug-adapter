@@ -162,7 +162,8 @@ object MainDebuggeeRunner {
   def mainClassRunner(
       source: String,
       mainClass: String,
-      scalaVersion: ScalaVersion
+      scalaVersion: ScalaVersion,
+      extension: String = "scala"
   ): MainDebuggeeRunner = {
     val tempDir = Files.createTempDirectory("scala-debug-adapter")
 
@@ -171,7 +172,7 @@ object MainDebuggeeRunner {
     val classDir = tempDir.resolve("classes")
     Files.createDirectory(classDir)
 
-    val sourceFile = srcDir.resolve(s"$mainClass.scala")
+    val sourceFile = srcDir.resolve(s"$mainClass.$extension")
     Files.write(sourceFile, source.getBytes())
 
     val scalaInstance = ScalaInstanceCache.get(scalaVersion)

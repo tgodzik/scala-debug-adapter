@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Failure
 import scala.util.Success
+import com.microsoft.java.debug.plugin.internal.eval.JdtEvaluationProvider
 
 private[internal] object EvaluationProvider {
   def apply(
@@ -41,12 +42,13 @@ private[internal] class EvaluationProvider(
 
   private var debugContext: IDebugAdapterContext = _
   private val isEvaluating = new AtomicBoolean(false)
-
+  private val javaEval = new JdtEvaluationProvider()
   override def initialize(
       debugContext: IDebugAdapterContext,
       options: java.util.Map[String, AnyRef]
   ): Unit = {
     this.debugContext = debugContext
+    javaEval.initialize(debugContext, options)
   }
 
   override def isInEvaluation(thread: ThreadReference) = isEvaluating.get()
@@ -57,12 +59,17 @@ private[internal] class EvaluationProvider(
       depth: Int
   ): CompletableFuture[Value] = {
     val frame = thread.frames().get(depth)
+    val isJava = frame.location().sourcePath().endsWith(".java")
     val future = new CompletableFuture[Value]()
     evaluator match {
       case None =>
         future.completeExceptionally(
           new Exception("Missing evaluator for this debug session")
         )
+        debugContext.getStackFrameManager.reloadStackFrames(thread)
+        future
+      case _ if isJava =>
+        javaEval.evaluate(expression, thread, depth)
       case Some(evaluator) =>
         evaluationBlock {
           evaluator.evaluate(expression, thread, frame) match {
@@ -72,9 +79,10 @@ private[internal] class EvaluationProvider(
               future.complete(value)
           }
         }
+        debugContext.getStackFrameManager.reloadStackFrames(thread)
+        future
     }
-    debugContext.getStackFrameManager.reloadStackFrames(thread)
-    future
+
   }
 
   override def evaluate(
