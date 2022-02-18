@@ -9,6 +9,7 @@ import com.microsoft.java.debug.core.IEvaluatableBreakpoint
 import com.microsoft.java.debug.core.adapter.IDebugAdapterContext
 import com.microsoft.java.debug.core.adapter.IEvaluationProvider
 import com.sun.jdi.ObjectReference
+import com.sun.jdi.StackFrame
 import com.sun.jdi.ThreadReference
 import com.sun.jdi.Value
 
@@ -56,30 +57,7 @@ private[internal] class EvaluationProvider(
       thread: ThreadReference,
       depth: Int
   ): CompletableFuture[Value] = {
-    val frame = thread.frames().get(depth)
-    val isJava = frame.location().sourcePath().endsWith(".java")
-    val future = new CompletableFuture[Value]()
-    evaluator match {
-      case None =>
-        future.completeExceptionally(
-          new Exception("Missing evaluator for this debug session")
-        )
-      case _ if isJava =>
-        future.completeExceptionally(
-          new Exception("Cannot evaluate Java sources")
-        )
-      case Some(evaluator) =>
-        evaluationBlock {
-          evaluator.evaluate(expression, thread, frame) match {
-            case Failure(exception) =>
-              future.completeExceptionally(exception)
-            case Success(value) =>
-              future.complete(value)
-          }
-        }
-    }
-    debugContext.getStackFrameManager.reloadStackFrames(thread)
-    future
+    evaluate(thread.frames().get(depth), expression, thread)
   }
 
   override def evaluate(
@@ -91,7 +69,9 @@ private[internal] class EvaluationProvider(
   override def evaluateForBreakpoint(
       breakpoint: IEvaluatableBreakpoint,
       thread: ThreadReference
-  ): CompletableFuture[Value] = ???
+  ): CompletableFuture[Value] = {
+    evaluate(thread.frames().get(0), breakpoint.getCondition(), thread)
+  }
 
   override def invokeMethod(
       thisContext: ObjectReference,
@@ -125,6 +105,35 @@ private[internal] class EvaluationProvider(
     future
   }
 
+  private def evaluate(
+      frame: StackFrame,
+      expression: String,
+      thread: ThreadReference
+  ): CompletableFuture[Value] = {
+    val isJava = frame.location().sourcePath().endsWith(".java")
+    val future = new CompletableFuture[Value]()
+    evaluator match {
+      case None =>
+        future.completeExceptionally(
+          new Exception("Missing evaluator for this debug session")
+        )
+      case _ if isJava =>
+        future.completeExceptionally(
+          new Exception("Cannot evaluate Java sources")
+        )
+      case Some(evaluator) =>
+        evaluationBlock {
+          evaluator.evaluate(expression, thread, frame) match {
+            case Failure(exception) =>
+              future.completeExceptionally(exception)
+            case Success(value) =>
+              future.complete(value)
+          }
+        }
+    }
+    debugContext.getStackFrameManager.reloadStackFrames(thread)
+    future
+  }
   private def evaluationBlock(f: => Unit): Unit = {
     isEvaluating.set(true)
     try f
